@@ -1,0 +1,113 @@
+pipeline {
+    agent any
+    
+    environment {
+        MY_CRED = credentials('azure01')
+    }
+    
+    stages {
+        stage("Parameter Setup") {
+            steps {
+                script {
+                    properties([
+                        parameters([
+                            choice(choices: ['apply', 'destroy'], description: 'Select an action', name: 'ACTION')
+                        ])
+                    ])
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def dockerImage = docker.build('brief14')
+                }
+            }
+        }
+        
+        stage('Docker Tag') {
+            steps {
+                script {
+                    sh 'docker tag brief14 vincentvdocker/brief14'
+                }
+            }
+        }
+        
+        stage('Login') {
+            steps {
+                script {
+                    sh 'docker login -u vincentvdocker -p dckr_pat_********************'
+                }
+            }
+        }
+        
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    sh 'docker push vincentvdocker/brief14'
+                }
+            }
+        }
+        
+        stage('Connection') {
+            steps {
+                sh 'az login --service-principal -u $MY_CRED_CLIENT_ID -p $MY_CRED_CLIENT_SECRET -t $MY_CRED_TENANT_ID'
+            }
+        }
+        
+        stage("Terraform Init (Staging)") {
+            steps {
+                script {
+                    sh 'cd stagingEnvironment && terraform init'
+                }
+            }
+        }
+        
+        stage('Terraform Plan (Staging)') {
+            steps {
+                script {
+                    sh 'cd stagingEnvironment && terraform plan'
+                }
+            }
+        }
+        
+        stage('Terraform Action (Staging)') {
+            steps {
+                script {
+                    sh "cd stagingEnvironment && terraform ${params.ACTION} --auto-approve"
+                }
+            }
+        }
+        
+        stage('Input') {
+            steps {
+                input message: 'Le staging est ok ?', ok: 'ok'
+            }
+        }
+        
+        stage("Terraform Init (Prod)") {
+            steps {
+                script {
+                    sh 'cd ProdEnvironment && terraform init'
+                }
+            }
+        }
+        
+        stage('Terraform Plan (Prod)') {
+            steps {
+                script {
+                    sh 'cd ProdEnvironment && terraform plan'
+                }
+            }
+        }
+        
+        stage('Terraform Action (Prod)') {
+            steps {
+                script {
+                    sh "cd ProdEnvironment && terraform ${params.ACTION} --auto-approve"
+                }
+            }
+        }
+    }
+}
